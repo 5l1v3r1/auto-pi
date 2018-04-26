@@ -22,6 +22,8 @@ function exit_error(){
 printf 'Downloading latest raspbian lite OS\n'
 curl -L -z raspbian-lite.zip --output raspbian-lite.zip https://downloads.raspberrypi.org/raspbian_lite_latest || exit_error 1
 
+## Integrity check of the .zip file. Mostly for verifying the download
+## was successful, but it will also add an extra layer of security
 remote_sha256="$(curl -s https://www.raspberrypi.org/downloads/raspbian/ | grep -o '[a-f0-9]\{64\}' | tail -1)"
 local_sha256="$(sha256sum raspbian-lite.zip | grep -o '[a-f0-9]\{64\}')"
 [[ $remote_sha256 == "${local_sha256}" ]] || exit_error 2
