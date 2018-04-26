@@ -1,0 +1,70 @@
+#!/bin/bash
+## This function exists to handle non-zero exits.
+## I prefer it over 'set -e' because it's more verbose and robust
+function exit_error(){
+	case $1 in
+		0) echo 'Please run the script as root' ;;
+		1) echo 'Curl encountered an issue when attempting to download the raspbian lite OS' ;;
+		2) echo 'sha256 mismatch. Local .zip appears to be corrupt' ;;
+		3) echo 'There was an error unzipping the raspbian-lite.zip file' ;;
+		4) echo 'No USBs were discovered. Try running dmesg' ;;
+		5) echo 'Invalid option' ;;
+	esac
+	exit 1
+}
+
+## The script must be run as root, otherwise it exits
+((UID == 0)) || exit_error 0
+
+## Curl will attempt to download the latest raspbian-lite OS
+## It will follow redirects, and skip the download if there is an already
+## existing raspbian-lite.zip identical to the one on the server
+printf 'Downloading latest raspbian lite OS\n'
+curl -L -z raspbian-lite.zip --output raspbian-lite.zip https://downloads.raspberrypi.org/raspbian_lite_latest || exit_error 1
+
+remote_sha256="$(curl -s https://www.raspberrypi.org/downloads/raspbian/ | grep -o '[a-f0-9]\{64\}' | tail -1)"
+local_sha256="$(sha256sum raspbian-lite.zip | grep -o '[a-f0-9]\{64\}')"
+[[ $remote_sha256 == "${local_sha256}" ]] || exit_error 2
+
+## Check for an already existing image file since it would
+## be pointless to unzip it more than once
+## there should be a way to check if there's more than one image file
+## and then prompt the user for which to use
+if ! find . -iname '*raspbian*lite*img' >/dev/null; then
+	printf 'Unzipping\n'
+	unzip raspbian-lite.zip || exit_error 3
+fi
+raspbian_img="$(find * -iname '*raspbian*lite*img' | head -n1)"
+
+## Bash allows filename patterns which match no files to
+## expand to a null string, rather than themselves, otherwise
+## the usb_list array will always expand to more than 0
+shopt -s nullglob
+
+## This reads a list of USB devices into the usb_list array 
+## by following each symbolic link found in /dev/disk/by-id/usb*
+## then exits if the list is equal to 0
+mapfile -t usb_list < <(for d in /dev/disk/by-id/usb*; do readlink -f "$(echo "${d}" | sed '/-part/d')"; done | awk '!/[0-9]/')
+((${#usb_list[@]} == 0)) && exit_error 4
+
+## Creates a prompt for the user to select which device to
+## copy the .img file to
+for ((i = 0; i < ${#usb_list[@]}; i++)); do
+	echo "[$i] ${usb_list[i]} ($(echo "$(echo "${usb_list[i]}" | awk -F/ '{print $3"$"}' | grep -f - /proc/partitions | awk '{print $3}')" / 1024 | bc) MB)"
+done
+read -rp 'Type number and hit [ENTER]: ' u
+((u > i)) && exit_error 5
+
+## Copies the .img file to the selected device
+## status='progress' doesn't seem to be working here
+## so below is a while loop that will check the 'Dirty' amount
+## left in /proc/meminfo. This isn't totally accurate, but
+## can help determine how long is left
+dd if="${raspbian_img}" of="${usb_list[u]}" bs=4M conv=fsync &
+while pgrep ^dd > /dev/null; do
+	sleep 0.1
+	grep 'Dirty' /proc/meminfo | tr -d '\n' | awk '{printf "%s %s left\r", $(NF-1), $NF}'
+done
+## TODO: request WiFi credentials and configure the raspbian OS
+## TODO: add options to change to the full raspbian image
+## TODO: work with other pi distros
