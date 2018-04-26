@@ -3,5 +3,5 @@ Downloads the latest raspbian lite image and configures raspbian to work headles
 
 # To be added 
 - request WiFi credentials and configure the raspbian OS
-- TODO: add options to change to the full raspbian image
+- add options to change to the full raspbian image
 - work with other pi distros
