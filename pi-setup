@@ -32,7 +32,8 @@ local_sha256="$(sha256sum raspbian-lite.zip | grep -o '[a-f0-9]\{64\}')"
 ## be pointless to unzip it more than once
 ## there should be a way to check if there's more than one image file
 ## and then prompt the user for which to use
-if ! find . -iname '*raspbian*lite*img' >/dev/null; then
+raspbian_img="$(find * -iname '*raspbian*lite*img' | head -n1)"
+if [[ -z $raspbian_img ]]; then
 	printf 'Unzipping\n'
 	unzip raspbian-lite.zip || exit_error 3
 fi
@@ -62,11 +63,21 @@ read -rp 'Type number and hit [ENTER]: ' u
 ## so below is a while loop that will check the 'Dirty' amount
 ## left in /proc/meminfo. This isn't totally accurate, but
 ## can help determine how long is left
+umount "${usb_list[u]}"* >/dev/null 2>&1
 dd if="${raspbian_img}" of="${usb_list[u]}" bs=4M conv=fsync &
 while pgrep ^dd > /dev/null; do
 	sleep 0.1
 	grep 'Dirty' /proc/meminfo | tr -d '\n' | awk '{printf "%s %s left\r", $(NF-1), $NF}'
 done
-## TODO: request WiFi credentials and configure the raspbian OS
-## TODO: add options to change to the full raspbian image
-## TODO: work with other pi distros
+read -rp 'Enter WiFi network name: ' netname
+read -rp 'Enter password: ' netpass
+mkdir -p /mnt/raspberry-pi
+# mkdir -p /mnt/raspberry-pi/boot
+mkdir -p /mnt/raspberry-pi/pifs
+# mount "${usb_list[u]}1" /mnt/raspberry-pi/boot
+mount "${usb_list[u]}2" /mnt/raspberry-pi/pifs
+# touch /mnt/raspberry-pi/boot/ssh
+# sed -i '1i auto wlan0' /mnt/raspberry-pi/pifs/etc/network/interfaces
+# printf 'allow-hotplug wlan0\niface wlan0 inet dhcp\nwpa-conf /etc/wpa_supplicant/wpa_supplicant.conf\niface default inet dhcp' >> /mnt/raspberry-pi/pifs/etc/wpa_supplicant/wpa_supplicant.conf
+wpa_passphrase "${netname}" "${netpass}" >> /mnt/raspberry-pi/pifs/etc/wpa_supplicant/wpa_supplicant.conf
+umount "${usb_list[u]}"* >/dev/null 2>&1
